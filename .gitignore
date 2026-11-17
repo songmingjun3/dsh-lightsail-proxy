@@ -1,0 +1,18 @@
+# Runtime state
+state/
+*.pid
+*.log
+
+# Local secrets and generated credentials
+*password*.txt
+*token*.txt
+*.pem
+*.key
+*.crt
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+node_modules/

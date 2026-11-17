@@ -1,0 +1,52 @@
+{
+  "name": "dsh-claude-ec2",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "DeepSeek Harness plugin: permanent Windows system proxy through AWS Lightsail over SSH SOCKS5, with direct-connect exclusion rules.",
+  "license": "MIT",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "lightsail",
+    "proxy",
+    "ssh",
+    "socks5",
+    "pac"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "lib/*.cjs",
+    "data/china-routes.json",
+    "locale/*.json",
+    "icon.svg",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-tools": { "optional": true }
+  },
+  "engines": {
+    "dsh": ">=0.2.2-rc.1 <0.3.0-0",
+    "node": ">=22.0.0"
+  },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": []
+    }
+  }
+}
