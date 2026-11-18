@@ -82,10 +82,14 @@ agentrouter.org    -> lightsail（本机 DNS 被污染到 127.0.0.1，但 Lights
 其验证码/WAF 依赖的阿里云域名默认被境内分流判为直连，导致与主站出口不一致、验证码通过后又被退回。为此新增 `lightsailDomains`：只按**完整域名精确匹配**（不做后缀匹配），把下列验证码域名固定到 Lightsail，和主站同出口：
 
 ```text
+o.alicdn.com
+cloudauth-device-dualstack.ap-southeast-1.aliyuncs.com
 cloudauth-device-pre.ap-southeast-1.aliyuncs.com
 pre-ap-southeast-1.device.saf.aliyuncs.com
 pre-device.captcha-open.aliyuncs.com
-o.alicdn.com
+20febf84394ca86df1247f5ad3a87b60.captcha-open-southeast.aliyuncs.com
+20febf84394ca86df1247f5ad3a87b60-verify.captcha-open-southeast.aliyuncs.com
+upload.captcha-open-southeast.aliyuncs.com
 ```
 
 其他网站的阿里云/CDN 域名（如 `img.alicdn.com`、`g.alicdn.com`、普通 `.aliyuncs.com`）不受影响，仍按境内直连。
