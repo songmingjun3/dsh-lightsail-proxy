@@ -27,10 +27,10 @@ SSH 用户          : ubuntu
 
 ## 功能
 
-- **常驻代理**：系统代理长期指向本机桥，不再依赖 `7890`。
-- **两态分流**：本机/局域网与境内域名/IP `DIRECT` 直连；其余所有公网域名（含 Claude、GitHub、agentrouter）全部走 Lightsail，出口 IP 固定。
-- **fail-closed**：关闭常驻代理或隧道异常时，系统代理仍指向已停止的 `8088`，访问直接失败，绝不回落到直连导致 IP 漂移。
-- **显式恢复直连**：只有点“恢复直连”才会清空系统代理、恢复正常上网。
+- **常驻代理**：开启时系统代理指向本机桥，境外流量（含 Claude、GitHub）全部走 Lightsail。
+- **分层分流**：本机/局域网与境内域名/IP `DIRECT` 直连；境外走 Lightsail；Claude 域名在 PAC 里单独锁定，任何模式下都不漂移。
+- **关闭 Lightsail 代理（回退）**：`permanentProxyOff` 只把一般境外流量退回原代理（`fallbackProxyPort`，默认 `7890`）；Claude 仍锁定本机桥到 Lightsail，隧道保活，出口不漂移。
+- **完全恢复直连**：`restoreDirect` 让一般流量直连，Claude 依旧锁定桥到 Lightsail。
 - **fd 泄漏防护**：握手阶段 socket 可被取消，连接数上限 512，接近上限时自动重建进程，避免 `Too many open files`。
 - **状态与测试**：显示 SSH/桥/出口 IP、PAC 路径、当前排除规则，并可测试 `claude.ai`、`api.anthropic.com`、`api.github.com`。
 - **活跃链接**：查看当前经 `8088` 桥的 CONNECT/HTTP 链接：目标域名、端口、持续时间、收发字节、最近结束的 30 条连接。
@@ -100,15 +100,27 @@ upload.captcha-open-southeast.aliyuncs.com
 
 注意：PAC 只影响系统代理客户端；直接访问 `127.0.0.1:8088` 的客户端同样经过桥的分流逻辑。
 
-## 关闭与恢复（fail-closed）
+## 三种运行模式
 
-- **关闭常驻代理（阻断流量）** / `stop` / `permanentProxyOff`：停止 SSH 和桥，系统代理仍指向 `127.0.0.1:8088`（此时无监听）。Claude 等所有走代理的流量直接失败，不回落到直连，出口 IP 不会漂移。
-- **恢复直连（停止阻断）** / `restoreDirect`：清空系统代理，让本机恢复正常直连上网。只有这个动作才会真正放开流量。
+PAC 始终保留 Claude 域名锁定到本机桥，因此 Claude 出口在三种模式下都固定为 Lightsail。
+
+| 动作 | 一般境外流量 | Claude 域名 | 隧道 |
+|---|---|---|---|
+| `permanentProxyOn` 启动 Lightsail 代理 | Lightsail（8088） | Lightsail（8088） | 运行 |
+| `permanentProxyOff` 关闭 Lightsail 代理 | 原代理（默认 7890） | Lightsail（8088） | 保活 |
+| `restoreDirect` 完全恢复直连 | DIRECT | Lightsail（8088） | 保活 |
+
+要点：
+
+- 关闭 Lightsail 代理**不会**停掉 SSH/桥，因为 Claude 仍需要它们；一般流量退回原代理端口。
+- `stop` 停止 SSH 隧道，桥保留继续提供 PAC，Claude 因此 fail-closed（失败而非漂移）。
+- 若希望彻底卸载并让 Claude 也走原代理，需要手动在 Windows 设置里关闭代理，或删除 PAC。
 
 ## 局限
 
 - 域名命中依赖离线库，库外的新域名会按 DNS 解析结果落入国内网段才判定为境内。
 - 仅覆盖 IPv4 网段判断；纯 IPv6 目标按域名库匹配。
+- 关闭 Lightsail 代理后隧道仍保活（为 Claude 服务），不会自动退出。
 
 ## 安装与启用
 
@@ -122,13 +134,13 @@ upload.captcha-open-southeast.aliyuncs.com
 
 1. 确认 Lightsail IP、SSH 用户、私钥路径；
 2. 按需调整排除规则；
-3. 点“启动常驻代理”；
+3. 点“启动 Lightsail 代理”；
 4. 用“测试出口”确认 `Lightsail 出口 IP` 等于配置的 IP；
 5. 用“查看活跃链接”检查当前代理连接，用“测试代理延迟”检查经 Lightsail 的链路质量。
 
 ## 重启隧道（不动系统代理）
 
-插件重载或调试时，不要用“关闭常驻代理”再“启动”的流程：中间会有一段系统代理指向已停止的桥，其他程序的连接状态会混乱。
+插件重载或调试时，不要用“关闭 Lightsail 代理”再“启动”的流程：中间会有一段系统代理指向已停止的桥，其他程序的连接状态会混乱。
 
 改用设置页的 **重启隧道（不动系统代理）**，或 agent 动作：
 
@@ -148,9 +160,10 @@ restartTunnel
 
 ## 回退 / 恢复上网
 
-- **关闭常驻代理（阻断流量）** / `stop`：停止本地桥/SSH，代理指向死端口，所有代理流量失败（fail-closed，防 IP 漂移）。
-- **恢复直连（停止阻断）** / `restoreDirect`：清空系统代理，恢复正常直连上网。
-- 手动恢复直连：Windows 设置 → 网络和 Internet → 代理 → 全部关闭。
+- **关闭 Lightsail 代理** / `permanentProxyOff`：一般境外流量退回原代理（默认 `7890`）；Claude 仍锁定本机桥到 Lightsail，隧道保活。
+- **完全恢复直连** / `restoreDirect`：一般境外流量改为 DIRECT；Claude 仍锁定桥到 Lightsail。
+- **停止隧道** / `stop`：停 SSH，桥保留继续提供 PAC，Claude 因此 fail-closed（失败而非漂移）。
+- 彻底卸载：Windows 设置 → 网络和 Internet → 代理，全部关闭（此时 Claude 不再受保护，会随系统网络漂移）。
 
 ## Lightsail 侧要求
 
