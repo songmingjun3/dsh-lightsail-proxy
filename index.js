@@ -433,6 +433,7 @@ function createService(ctx, config) {
       CLAUDE_FALLBACK_HOST: s.fallbackProxyHost,
       CLAUDE_FALLBACK_PORT: String(s.fallbackProxyPort),
       CLAUDE_PROXY_DOMAINS: s.proxyDomains || '',
+      CLAUDE_LIGHTSAIL_DOMAINS: s.lightsailDomains || '',
       CLAUDE_ROUTES_FILE: path.join(PACKAGE_DIR, 'data', 'china-routes.json'),
       CLAUDE_EXCLUDE_RULES: [
         ...compileExclusions(s).domains.filter(rule => !['localhost', '.local', '127.*', '10.*', '172.16.*', '172.17.*', '172.18.*', '172.19.*', '172.2*', '172.30.*', '172.31.*', '192.168.*', '<local>'].includes(rule)),

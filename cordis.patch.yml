@@ -16,5 +16,6 @@
         excludeSuffixes: '.cn,.aliyun.com,.baidu.com,.qq.com,.taobao.com,.tmall.com,.jd.com,.weibo.com,.bilibili.com,.aliyuncs.com,.alicdn.com'
         excludeIps: ''
         proxyDomains: ''
+        lightsailDomains: 'cloudauth-device-pre.ap-southeast-1.aliyuncs.com,pre-ap-southeast-1.device.saf.aliyuncs.com,pre-device.captcha-open.aliyuncs.com,o.alicdn.com'
         fallbackProxyHost: 127.0.0.1
         fallbackProxyPort: 7890

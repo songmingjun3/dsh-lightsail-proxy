@@ -75,8 +75,20 @@ agentrouter.org    -> lightsail（本机 DNS 被污染到 127.0.0.1，但 Lights
 | 排除的域名 / 网段 | `localhost,10.*,192.168.*` | 命中即直连，不经过任何代理 |
 | 排除的后缀 | `.aliyuncs.com,.alicdn.com` | 后缀匹配直连 |
 | 排除的 IP | `203.0.113.10` | 精确公网 IP 直连 |
+| 强制走 Lightsail 的精确域名 | `o.alicdn.com` | 完整域名精确匹配，优先于境内判断 |
 
 `agentrouter.org` 本机 DNS 被污染到 `127.0.0.1`，且直连真实 IP 时 TLS 会被 RST，因此不做本机 hosts/DNS 修改，统一由 Lightsail 侧解析和访问，出口固定。
+
+其验证码/WAF 依赖的阿里云域名默认被境内分流判为直连，导致与主站出口不一致、验证码通过后又被退回。为此新增 `lightsailDomains`：只按**完整域名精确匹配**（不做后缀匹配），把下列验证码域名固定到 Lightsail，和主站同出口：
+
+```text
+cloudauth-device-pre.ap-southeast-1.aliyuncs.com
+pre-ap-southeast-1.device.saf.aliyuncs.com
+pre-device.captcha-open.aliyuncs.com
+o.alicdn.com
+```
+
+其他网站的阿里云/CDN 域名（如 `img.alicdn.com`、`g.alicdn.com`、普通 `.aliyuncs.com`）不受影响，仍按境内直连。
 
 `proxyDomains` 字段保留但默认为空（不再使用 7890）。
 
