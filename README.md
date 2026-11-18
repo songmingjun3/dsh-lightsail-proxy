@@ -1,6 +1,6 @@
 # dsh-claude-ec2 · Lightsail 常驻代理
 
-DeepSeek Harness 插件：把 Windows 系统代理固定指向本机 HTTP 桥，再由 SSH SOCKS5 从 **AWS Lightsail** 出网。支持“排除规则”：本机/局域网直连，指定公网域名改走原代理，其余流量（含 Claude、GitHub 等）全部走 Lightsail。
+DeepSeek Harness 插件：把 Windows 系统代理固定指向本机 HTTP 桥，再由 SSH SOCKS5 从 **AWS Lightsail** 出网。三态分流：本机/局域网与境内流量直连，指定域名强制走原代理，其余流量（含 Claude、GitHub 等）走 Lightsail。
 
 ## 当前配置（唯一保留的部署）
 
@@ -18,19 +18,21 @@ SSH 用户          : ubuntu
 
 ```text
 应用 / 浏览器 / Claude Desktop
-  -> 系统 PAC（本机 DIRECT，排除的公网域名走原代理）
+  -> 系统 PAC（本机/局域网 DIRECT，其余交给本地桥）
   -> 127.0.0.1:8088 HTTP CONNECT 桥
-  -> 127.0.0.1:1080 SSH SOCKS5
-  -> Lightsail <YOUR_LIGHTSAIL_IP>
+       ├─ 境内域名/IP、排除项 -> DIRECT 直连
+       ├─ proxyDomains        -> 原代理 127.0.0.1:7890
+       └─ 其他（Claude/GitHub）-> 127.0.0.1:1080 SSH SOCKS5 -> Lightsail <YOUR_LIGHTSAIL_IP>
   -> 目标站点
 ```
 
 ## 功能
 
 - **常驻代理**：系统代理长期指向本机桥，不需要在 `7890` / `8088` 之间来回切换。
-- **排除规则**：在设置页配置域名、后缀、IP；本机/局域网命中后 `DIRECT`，公网排除项走原代理（默认 `127.0.0.1:7890`），其余走 Lightsail。
+- **三态分流**：本机/局域网与境内域名/IP `DIRECT` 直连；`proxyDomains` 里的域名走原代理；其余走 Lightsail。
 - **fail-closed**：Lightsail 或本地桥断开时访问失败，不会偷偷回落到其他 VPN，出口 IP 保持稳定。
-- **一键恢复**：关闭常驻代理时恢复原始系统代理（默认 `127.0.0.1:7890`，可在设置页修改）。
+- **一键恢复**：关闭常驻代理时恢复启用前的系统代理状态（有备份恢复备份，无备份则恢复直连，不再硬编码 `7890`）。
+- **fd 泄漏防护**：握手阶段 socket 可被取消，连接数上限 512，接近上限时自动重建进程，避免 `Too many open files`。
 - **状态与测试**：显示 SSH/桥/出口 IP、PAC 路径、当前排除规则，并可测试 `claude.ai`、`api.anthropic.com`、`api.github.com`。
 - **活跃链接**：查看当前经 `8088` 桥的 CONNECT/HTTP 链接：目标域名、端口、持续时间、收发字节、最近结束的 30 条连接。
 - **代理延迟**：多次经 `8088 → SOCKS5 → Lightsail` 探测 HTTPS 目标，统计代理连接耗时、TLS 握手、TTFB、总延迟、最小/最大/P50/P95/抖动。
@@ -42,8 +44,9 @@ SSH 用户          : ubuntu
 
 ```text
 localhost / 127.* / 10.* / 172.16-31.* / 192.168.* / .local -> DIRECT
-中国域名 / 中国 IP（离线库）        -> 原代理 127.0.0.1:7890
-用户排除规则命中的公网域名/后缀/IP  -> 原代理 127.0.0.1:7890
+中国域名 / 中国 IP（离线库）        -> DIRECT
+用户排除规则命中的域名/后缀/IP      -> DIRECT
+proxyDomains 命中的域名             -> 原代理 127.0.0.1:7890
 其他所有流量（Claude / GitHub 等）  -> Lightsail <YOUR_LIGHTSAIL_IP>
 ```
 
@@ -59,24 +62,26 @@ localhost / 127.* / 10.* / 172.16-31.* / 192.168.* / .local -> DIRECT
 已实测：
 
 ```text
-www.baidu.com      -> fallback 127.0.0.1:7890
-www.qq.com         -> fallback 127.0.0.1:7890
-223.5.5.5          -> fallback 127.0.0.1:7890
+www.baidu.com      -> direct
+www.qq.com         -> direct
+223.5.5.5          -> direct
 api.github.com     -> lightsail
 chatgpt.com        -> lightsail
+agentrouter.org    -> fallback 127.0.0.1:7890（在 proxyDomains 中）
 ```
 
-## 排除规则写法（可选覆盖）
-
-自动分流已覆盖绝大多数境内站点，排除规则用于纠正误判或强制指定：
+## 排除规则与 proxyDomains
 
 | 字段 | 示例 | 含义 |
 |---|---|---|
-| 排除的域名 / 网段 | `agentrouter.org` | 命中即走原代理，不走 Lightsail |
-| 排除的后缀 | `.aliyuncs.com,.alicdn.com` | 后缀匹配走原代理 |
-| 排除的 IP | `203.0.113.10` | 精确公网 IP 走原代理 |
+| 排除的域名 / 网段 | `localhost,10.*,192.168.*` | 命中即直连，不经过任何代理 |
+| 排除的后缀 | `.aliyuncs.com,.alicdn.com` | 后缀匹配直连 |
+| 排除的 IP | `203.0.113.10` | 精确公网 IP 直连 |
+| 强制走原代理的域名 | `agentrouter.org,.agentrouter.org` | 即使属于境内也走原代理，用于本机 DNS 被污染（解析到 `127.0.0.1`）的站点 |
 
-保存后立即重建 PAC 并递增 `AutoConfigURL` 版本号，强制 Windows 丢弃旧缓存。排除规则同时下发给本地桥，PAC 与桥不会出现两套判断。
+`agentrouter.org` 本机 DNS 被解析到 `127.0.0.1`，直连会失败，因此放在 `proxyDomains` 走原代理解析。默认排除项已不含它。
+
+保存后立即重建 PAC 并递增 `AutoConfigURL` 版本号，强制 Windows 丢弃旧缓存。路由规则同时下发给本地桥，PAC 与桥不会出现两套判断。
 
 注意：PAC 只影响系统代理客户端；直接访问 `127.0.0.1:8088` 的客户端同样经过桥的分流逻辑。
 
@@ -84,7 +89,7 @@ chatgpt.com        -> lightsail
 
 - 域名命中依赖离线库，库外的新域名会按 DNS 解析结果落入国内网段才判定为境内。
 - 仅覆盖 IPv4 网段判断；纯 IPv6 目标按域名库匹配。
-- 若原代理 `7890` 不可用，境内流量会失败，不会改走 Lightsail。
+- `proxyDomains` 依赖原代理 `7890`；若它不可用，这些域名会失败，不会改走 Lightsail。
 
 ## 安装与启用
 

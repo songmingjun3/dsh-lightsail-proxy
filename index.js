@@ -432,6 +432,7 @@ function createService(ctx, config) {
       CLAUDE_SOCKS_PORT: String(s.socksPort),
       CLAUDE_FALLBACK_HOST: s.fallbackProxyHost,
       CLAUDE_FALLBACK_PORT: String(s.fallbackProxyPort),
+      CLAUDE_PROXY_DOMAINS: s.proxyDomains || '',
       CLAUDE_ROUTES_FILE: path.join(PACKAGE_DIR, 'data', 'china-routes.json'),
       CLAUDE_EXCLUDE_RULES: [
         ...compileExclusions(s).domains.filter(rule => !['localhost', '.local', '127.*', '10.*', '172.16.*', '172.17.*', '172.18.*', '172.19.*', '172.2*', '172.30.*', '172.31.*', '192.168.*', '<local>'].includes(rule)),
@@ -532,29 +533,27 @@ function createService(ctx, config) {
   }
 
   async function disablePermanentProxy() {
+    // Restore the exact state captured before the permanent proxy was enabled,
+    // respecting the user's prior configuration (which may be an HTTP proxy or
+    // an older PAC). Only when no backup exists do we fall back to DIRECT —
+    // never to a hardcoded VPN address.
     const backup = (() => {
       try {
         const value = JSON.parse(fs.readFileSync(PROXY_BACKUP, 'utf8'));
         return {
-          proxyEnable: value.proxyEnable ?? '1',
-          proxyServer: value.proxyServer ?? `${settings().fallbackProxyHost}:${settings().fallbackProxyPort}`,
+          proxyEnable: value.proxyEnable ?? '0',
+          proxyServer: value.proxyServer ?? null,
           autoConfigUrl: value.autoConfigUrl ?? null,
           proxyOverride: value.proxyOverride ?? null,
         };
       } catch { return null; }
     })();
-    const s = settings();
-    const restored = backup || {
-      proxyEnable: '1',
-      proxyServer: `${s.fallbackProxyHost}:${s.fallbackProxyPort}`,
-      autoConfigUrl: null,
-      proxyOverride: null,
-    };
+    const restored = backup || { proxyEnable: '0', proxyServer: null, autoConfigUrl: null, proxyOverride: null };
     await writeSystemProxy(restored);
     try { fs.rmSync(ACTIVE_MARKER, { force: true }); } catch { /* best effort */ }
     try { fs.rmSync(PROXY_BACKUP, { force: true }); } catch { /* best effort */ }
-    appendLog(`permanent proxy disabled, restored ${restored.proxyServer || restored.autoConfigUrl || 'system default'}`);
-    return { enabled: false, restoredProxy: restored };
+    appendLog(`permanent proxy disabled, restored ${backup ? (restored.proxyServer || restored.autoConfigUrl || 'no-proxy') : 'DIRECT (no backup)'}`);
+    return { enabled: false, restoredProxy: restored, mode: backup ? 'backup' : 'direct' };
   }
 
   async function startTunnel() {

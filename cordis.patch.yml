@@ -12,8 +12,9 @@
         proxyPort: 8088
         permanentProxy: true
         failClosed: true
-        excludeDomains: 'localhost,.local,127.*,10.*,172.16.*,172.17.*,172.18.*,172.19.*,172.2*,172.30.*,172.31.*,192.168.*,agentrouter.org,.agentrouter.org'
+        excludeDomains: 'localhost,.local,127.*,10.*,172.16.*,172.17.*,172.18.*,172.19.*,172.2*,172.30.*,172.31.*,192.168.*'
         excludeSuffixes: '.cn,.aliyun.com,.baidu.com,.qq.com,.taobao.com,.tmall.com,.jd.com,.weibo.com,.bilibili.com,.aliyuncs.com,.alicdn.com'
         excludeIps: ''
+        proxyDomains: 'agentrouter.org,.agentrouter.org'
         fallbackProxyHost: 127.0.0.1
         fallbackProxyPort: 7890
