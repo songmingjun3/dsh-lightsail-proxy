@@ -532,28 +532,48 @@ function createService(ctx, config) {
     };
   }
 
-  async function disablePermanentProxy() {
-    // Restore the exact state captured before the permanent proxy was enabled,
-    // respecting the user's prior configuration (which may be an HTTP proxy or
-    // an older PAC). Only when no backup exists do we fall back to DIRECT —
-    // never to a hardcoded VPN address.
-    const backup = (() => {
-      try {
-        const value = JSON.parse(fs.readFileSync(PROXY_BACKUP, 'utf8'));
-        return {
-          proxyEnable: value.proxyEnable ?? '0',
-          proxyServer: value.proxyServer ?? null,
-          autoConfigUrl: value.autoConfigUrl ?? null,
-          proxyOverride: value.proxyOverride ?? null,
-        };
-      } catch { return null; }
-    })();
-    const restored = backup || { proxyEnable: '0', proxyServer: null, autoConfigUrl: null, proxyOverride: null };
+  async function disablePermanentProxy(options = {}) {
+    // Fail-closed: stop the local tunnel but keep the system proxy pointed at
+    // the now-dead 8088 bridge. Claude and other proxied traffic fail instead of
+    // silently falling back to a direct connection with a drifting IP.
+    // stopAll() calls this before killing processes, so it must not kill them
+    // itself in that case (keepTunnel=true).
+    const s = settings();
+    await writeSystemProxy({
+      proxyEnable: '1',
+      proxyServer: `${s.proxyHost}:${s.proxyPort}`,
+      autoConfigUrl: null,
+      proxyOverride: null,
+    });
+    try { fs.rmSync(ACTIVE_MARKER, { force: true }); } catch { /* best effort */ }
+    const killed = {};
+    if (!options.keepTunnel) {
+      for (const kind of ['bridge', 'ssh']) {
+        const pid = readPid(kind);
+        killed[kind] = pid ? await killPid(pid) : false;
+        clearPid(kind);
+      }
+    }
+    appendLog(`permanent proxy disabled (fail-closed): system proxy kept on 8088, tunnel ${options.keepTunnel ? 'left to stopAll' : 'stopped'}`);
+    return {
+      enabled: false,
+      mode: 'fail-closed',
+      killed,
+      note: 'System proxy still points at 127.0.0.1:8088 (stopped). Proxied traffic is blocked, not direct.',
+    };
+  }
+
+  async function restoreDirect() {
+    // Explicit escape hatch: fully clear the system proxy so the machine can
+    // browse directly again. Only this action restores internet access after a
+    // fail-closed disable.
+    const restored = { proxyEnable: '0', proxyServer: null, autoConfigUrl: null, proxyOverride: null };
     await writeSystemProxy(restored);
     try { fs.rmSync(ACTIVE_MARKER, { force: true }); } catch { /* best effort */ }
     try { fs.rmSync(PROXY_BACKUP, { force: true }); } catch { /* best effort */ }
-    appendLog(`permanent proxy disabled, restored ${backup ? (restored.proxyServer || restored.autoConfigUrl || 'no-proxy') : 'DIRECT (no backup)'}`);
-    return { enabled: false, restoredProxy: restored, mode: backup ? 'backup' : 'direct' };
+    await unblock();
+    appendLog('system proxy restored to DIRECT (explicit restoreDirect)');
+    return { enabled: false, mode: 'direct', restoredProxy: restored };
   }
 
   async function startTunnel() {
@@ -608,10 +628,12 @@ function createService(ctx, config) {
 
   async function stopAll() {
     const s = settings();
-    // When the permanent PAC is active, stop means "restore the original proxy",
-    // which is explicit user intent. restartTunnel() is the non-disruptive path.
+    // When the permanent proxy is active, stopping is fail-closed: keep the
+    // system proxy on the dead bridge so Claude never falls back to direct.
+    // restartTunnel() is the non-disruptive path; restoreDirect() explicitly
+    // clears the proxy when the user really wants direct internet.
     const restored = pacIsActive() || fs.existsSync(PROXY_BACKUP)
-      ? await disablePermanentProxy()
+      ? await disablePermanentProxy({ keepTunnel: true })
       : null;
     const killed = {};
     for (const kind of ['bridge', 'ssh']) {
@@ -917,6 +939,7 @@ function createService(ctx, config) {
       case 'startTunnel': return startTunnel();
       case 'permanentProxyOn': return enablePermanentProxy();
       case 'permanentProxyOff': return disablePermanentProxy();
+      case 'restoreDirect': return restoreDirect();
       case 'stop': return stopAll();
       case 'restartTunnel': return restartTunnel();
       case 'test': return test();
@@ -989,7 +1012,7 @@ function createService(ctx, config) {
         parameters: {
           action: {
             type: 'string', required: true,
-            description: 'One of: status, saveSettings, startTunnel, restartTunnel, permanentProxyOn, permanentProxyOff, stop, test, connections, latency, log.',
+            description: 'One of: status, saveSettings, startTunnel, restartTunnel, permanentProxyOn, permanentProxyOff, restoreDirect, stop, test, connections, latency, log.',
           },
           limit: { type: 'number', description: 'For log: number of trailing lines (1-300).' },
           count: { type: 'number', description: 'For latency: number of probes (1-10, default 5).' },
@@ -1045,7 +1068,7 @@ function createService(ctx, config) {
   appendLog(`plugin loaded: node=${NODE_BINARY} api=${API_PREFIX}`);
 
   return {
-    execute, status, saveSettings, startTunnel, restartTunnel, enablePermanentProxy, disablePermanentProxy, stop: stopAll, test, connections, latency, log,
+    execute, status, saveSettings, startTunnel, restartTunnel, enablePermanentProxy, disablePermanentProxy, restoreDirect, stop: stopAll, test, connections, latency, log,
     dispose() { /* detached processes intentionally survive a plugin reload */ },
   };
 }
