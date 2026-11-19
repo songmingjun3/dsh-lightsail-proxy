@@ -1,6 +1,6 @@
 {
   "name": "dsh-claude-ec2",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "private": true,
   "type": "module",
   "description": "DeepSeek Harness plugin: permanent Windows system proxy through AWS Lightsail over SSH SOCKS5, with direct-connect exclusion rules.",
